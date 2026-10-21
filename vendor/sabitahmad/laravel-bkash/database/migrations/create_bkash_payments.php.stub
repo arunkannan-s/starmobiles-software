@@ -1,0 +1,35 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration {
+    public function up(): void
+    {
+        Schema::create('bkash_payments', function (Blueprint $table) {
+            $table->id();
+            $table->string('type')->index(); // Type of transaction (create_payment, execute_payment, etc.)
+            $table->string('payment_id')->nullable()->index(); // Payment ID or Agreement ID
+            $table->string('trx_id')->nullable()->index(); // bKash transaction ID
+            $table->string('payer_reference')->nullable()->index();
+            $table->string('invoice_number')->nullable()->index();
+            $table->decimal('amount', 15, 2)->nullable(); // Amount (increased precision)
+            $table->string('status')->default('pending')->index(); // Transaction status
+            $table->string('status_code')->nullable(); // bKash status code
+            $table->string('status_message')->nullable(); // bKash status message
+            $table->json('response')->nullable(); // Full API response
+            $table->timestamps();
+
+            // Add indexes for common queries
+            $table->index(['type', 'status']);
+            $table->index(['payment_id', 'type']);
+            $table->index('created_at');
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('bkash_payments');
+    }
+};
