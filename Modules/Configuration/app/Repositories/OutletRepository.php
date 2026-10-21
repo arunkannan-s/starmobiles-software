@@ -25,15 +25,21 @@ class OutletRepository
 
     /**
      * Get outlets with pagination
+     * @param int $perPage
+     * @param array|null $outletIds Restrict results to these outlet IDs when provided (e.g. for non-Super Admin users)
      */
     // no need to paginate, just return all outlets
-    public function paginate(int $perPage = 100): LengthAwarePaginator
+    public function paginate(int $perPage = 100, ?array $outletIds = null): LengthAwarePaginator
     {
-        return $this->model->where('del_status', 'Live')
+        $query = $this->model->where('del_status', 'Live')
             ->where('company_id', session('company.company_id'))
-            ->with(['creator'])
-            ->orderBy('created_at', 'desc')
-            ->paginate($perPage);
+            ->with(['creator']);
+
+        if ($outletIds !== null) {
+            $query->whereIn('id', $outletIds);
+        }
+
+        return $query->orderBy('created_at', 'desc')->paginate($perPage);
     }
 
     /**

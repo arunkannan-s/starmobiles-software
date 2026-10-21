@@ -25,10 +25,15 @@ class OutletService
     }
 
     /**
-     * Get all outlets with pagination
+     * Get all outlets with pagination.
+     * Non-Super Admin users only see the outlets assigned to them.
      */
     public function getAllOutlets($perPage = 100)
     {
+        $user = Auth::user();
+        if ($user && !$user->hasRole('Super Admin')) {
+            return $this->outletRepository->paginate($perPage, $user->outlet_ids);
+        }
         return $this->outletRepository->paginate($perPage);
     }
 
@@ -167,6 +172,11 @@ class OutletService
         
         if (!$outlet) {
             throw new \Exception('Outlet not found');
+        }
+
+        $user = Auth::user();
+        if (!$user->hasRole('Super Admin') && !in_array($outlet->id, $user->outlet_ids, true)) {
+            throw new \Exception('You do not have access to this outlet.');
         }
 
         session([

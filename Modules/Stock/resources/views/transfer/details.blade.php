@@ -58,6 +58,12 @@
                                     @endphp
                                     <p class="mb-0">{{ __('Status') }}: <span class="badge bg-{{ $statusClass }}">{{ $statusString }}</span></p>
                                 @endif
+                                @if($transfer->payment_status)
+                                    @php
+                                        $paymentStatusClass = $transfer->payment_status === 'Paid' ? 'success' : 'danger';
+                                    @endphp
+                                    <p class="mb-0">{{ __('Payment Status') }}: <span class="badge bg-{{ $paymentStatusClass }}">{{ __($transfer->payment_status) }}</span></p>
+                                @endif
                             </div>
                             <div class="col-md-6 pb-3">
                                 <div class="d-flex justify-content-center">
@@ -84,6 +90,8 @@
                                             <th class="w-30 text-start">{{ __('Item') }}-{{ __('Code') }}-{{ __('Brand') }}</th>
                                             <th class="w-15 text-center">{{ __('IMEI/Serial') }}</th>
                                             <th class="w-15 text-center">{{ __('Quantity') }}</th>
+                                            <th class="w-15 text-center">{{ __('Transfer Price') }}</th>
+                                            <th class="w-15 text-center">{{ __('Line Total') }}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -130,6 +138,12 @@
                                                             {{ $detail->item->saleUnit->unit_name }}
                                                         @endif
                                                     </td>
+                                                    <td class="text-center">
+                                                        {{ formatAmount($detail->purchase_price ?? 0) }}
+                                                    </td>
+                                                    <td class="text-center">
+                                                        {{ formatAmount(($detail->purchase_price ?? 0) * ($detail->quantity_amount ?? $detail->quantity ?? 0)) }}
+                                                    </td>
                                                 </tr>
                                             @endforeach
                                         @endif
@@ -158,6 +172,10 @@
                                     <p class="color-71">{{ __('Total Items') }}</p>
                                     <p>{{ $transfer->transferDetails ? $transfer->transferDetails->count() : 0 }}</p>
                                 </div>
+                                <div class="details_footer d-flex justify-content-between foot_common_bg br-3">
+                                    <p class="color-71">{{ __('Total Amount') }}</p>
+                                    <p>{{ formatAmount($transfer->total_amount ?? 0) }}</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -167,6 +185,13 @@
                         <a href="{{ route('transfer.edit', $transfer->encrypted_id) }}" class="btn btn-primary waves-effect waves-light me-4">
                             {!! editIconWithText(__('Edit')) !!}
                         </a>
+                        @can('transfer_payment-create')
+                        @if($transfer->payment_status === 'Unpaid' && $transfer->from_outlet_id && $transfer->to_outlet_id)
+                        <a href="{{ route('transfer-payment.create', ['from_outlet_id' => $transfer->to_outlet_id, 'to_outlet_id' => $transfer->from_outlet_id]) }}" class="btn btn-success waves-effect waves-light me-4">
+                            <i class="ti tabler-cash me-1"></i>{{ __('Add Payment') }}
+                        </a>
+                        @endif
+                        @endcan
                         <a href="{{ route('transfer.index') }}" class="btn btn-primary waves-effect waves-light">
                             {!! backIconWithText() !!}
                         </a>

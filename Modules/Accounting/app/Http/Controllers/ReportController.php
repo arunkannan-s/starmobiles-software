@@ -19,6 +19,7 @@ use Modules\Purchase\Models\PurchaseReturn;
 use Modules\Accounting\Models\PaymentMethod;
 use Modules\Purchase\Models\PurchasePayment;
 use Modules\Purchase\Models\SupplierPayment;
+use Modules\Stock\Models\TransferPayment;
 use Modules\Accounting\Models\DepositWithdraw;
 use Modules\Sale\Models\InstallmentSaleDetail;
 use Modules\Administrator\Models\SalaryPayment;
@@ -27,6 +28,26 @@ use Modules\Stock\Services\StockService;
 
 class ReportController extends Controller
 {
+    /**
+     * Inter-outlet transfer payments for one payment account.
+     * From Outlet hands over the money (cash goes OUT there) and To Outlet receives it
+     * (cash comes IN there). With no outlet filter both legs are included, so they
+     * cancel out for the company as a whole.
+     * Returns [paidOut, receivedIn].
+     */
+    protected function transferPaymentLegs(int $companyId, int $pmId, ?int $outletId, ?string $beforeDate = null): array
+    {
+        $base = TransferPayment::where('del_status', 'Live')
+            ->where('company_id', $companyId)
+            ->where('payment_method_id', $pmId);
+        if ($beforeDate) {
+            $base->whereDate('date', '<', $beforeDate);
+        }
+        $paid = (float) (clone $base)->when($outletId, fn ($q) => $q->where('from_outlet_id', $outletId))->sum('amount');
+        $received = (float) (clone $base)->when($outletId, fn ($q) => $q->where('to_outlet_id', $outletId))->sum('amount');
+        return [$paid, $received];
+    }
+
     /**
      * Get Account Balance Report
      * Current balance = Opening + Sale + Installment Sale (down) + Installment Collection + Customer Receive
@@ -161,11 +182,15 @@ class ReportController extends Controller
                 ->where('payment_method_id', $pmId)
                 ->sum('amount');
 
+            [$transferPaidOut, $transferReceivedIn] = $this->transferPaymentLegs((int) $companyId, (int) $pmId, $outletId ? (int) $outletId : null);
+
             $currentBalance = $openingBalance
                 + $sale - $saleReturn
                 + $installmentSale + $installmentCollection
                 + $customerReceive + $income + $purchaseReturn + $deposit
-                - $purchase - $supplierPayment - $expense - $servicing - $withdraw - $salary - $employeeAdvance;
+                + $transferReceivedIn
+                - $purchase - $supplierPayment - $expense - $servicing - $withdraw - $salary - $employeeAdvance
+                - $transferPaidOut;
 
             $totalBalanceRaw += $currentBalance;
 
@@ -326,11 +351,15 @@ class ReportController extends Controller
             ->whereDate('date', '<', $dateFrom)
             ->sum('amount');
 
+        [$transferPaidOut, $transferReceivedIn] = $this->transferPaymentLegs($companyId, $pmId, $outletId, $dateFrom);
+
         return $base
             + $sale - $saleReturn
             + $installmentSale + $installmentCollection
             + $customerReceive + $income + $purchaseReturn + $deposit
-            - $purchase - $supplierPayment - $expense - $servicing - $withdraw - $salary - $employeeAdvance;
+            + $transferReceivedIn
+            - $purchase - $supplierPayment - $expense - $servicing - $withdraw - $salary - $employeeAdvance
+            - $transferPaidOut;
     }
 
     /**
@@ -708,6 +737,50 @@ class ReportController extends Controller
                 'created_at' => $payment->created_at,
                 'created_by' => $payment->user_id ? \App\Models\User::find($payment->user_id)?->name : null,
             ];
+        }
+
+        // Transfer Payments (inter-outlet): cash OUT at the paying outlet, cash IN at the receiving outlet
+        $transferPaymentQuery = TransferPayment::where('del_status', 'Live')
+            ->where('payment_method_id', $paymentMethodId)
+            ->where('company_id', $companyId);
+        if ($dateFrom) {
+            $transferPaymentQuery->whereDate('date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $transferPaymentQuery->whereDate('date', '<=', $dateTo);
+        }
+        $transferPayments = $transferPaymentQuery->with(['fromOutlet', 'toOutlet'])->orderBy('date', 'asc')->orderBy('id', 'asc')->get();
+        foreach ($transferPayments as $tp) {
+            if (! $outletId || (int) $tp->from_outlet_id === (int) $outletId) {
+                $runningBalance -= $tp->amount;
+                $statements[] = [
+                    'id' => 'transfer_payment_out_' . $tp->id,
+                    'date' => $tp->date,
+                    'title' => 'Transfer Payment given to ' . ($tp->toOutlet->outlet_name ?? '-') . ' - ' . ($tp->reference_no ?? 'N/A'),
+                    'reference_no' => $tp->reference_no ?? '-',
+                    'type' => 'Transfer Payment',
+                    'debit' => formatAmount($tp->amount),
+                    'credit' => 0,
+                    'balance' => formatAmount($runningBalance),
+                    'created_at' => $tp->created_at,
+                    'created_by' => $tp->user_id ? \App\Models\User::find($tp->user_id)?->name : null,
+                ];
+            }
+            if (! $outletId || (int) $tp->to_outlet_id === (int) $outletId) {
+                $runningBalance += $tp->amount;
+                $statements[] = [
+                    'id' => 'transfer_payment_in_' . $tp->id,
+                    'date' => $tp->date,
+                    'title' => 'Transfer Payment received from ' . ($tp->fromOutlet->outlet_name ?? '-') . ' - ' . ($tp->reference_no ?? 'N/A'),
+                    'reference_no' => $tp->reference_no ?? '-',
+                    'type' => 'Transfer Payment',
+                    'debit' => 0,
+                    'credit' => formatAmount($tp->amount),
+                    'balance' => formatAmount($runningBalance),
+                    'created_at' => $tp->created_at,
+                    'created_by' => $tp->user_id ? \App\Models\User::find($tp->user_id)?->name : null,
+                ];
+            }
         }
 
         // Expense
@@ -1131,6 +1204,30 @@ class ReportController extends Controller
                 'amount_raw' => $sp->amount,
                 'created_at_raw' => $sp->created_at,
             ]);
+        }
+
+        // Transfer Payments (inter-outlet): one entry for the outlet that paid, one for the outlet that received
+        $transferPays = TransferPayment::where('del_status', 'Live')->where('company_id', $companyId)->where('payment_method_id', $pmId);
+        $dateFilter($transferPays);
+        foreach ($transferPays->get() as $tp) {
+            if (! $outletId || (int) $tp->from_outlet_id === $outletId) {
+                $transactions[] = array_merge($base, [
+                    'date_raw' => $tp->date,
+                    'reference_no' => $tp->reference_no ?? '-',
+                    'type' => 'Transfer Payment (Paid)',
+                    'amount_raw' => $tp->amount,
+                    'created_at_raw' => $tp->created_at,
+                ]);
+            }
+            if (! $outletId || (int) $tp->to_outlet_id === $outletId) {
+                $transactions[] = array_merge($base, [
+                    'date_raw' => $tp->date,
+                    'reference_no' => $tp->reference_no ?? '-',
+                    'type' => 'Transfer Payment (Received)',
+                    'amount_raw' => $tp->amount,
+                    'created_at_raw' => $tp->created_at,
+                ]);
+            }
         }
 
         // Expense
@@ -1564,7 +1661,9 @@ class ReportController extends Controller
         $withdraw = (float) DepositWithdraw::where('del_status', 'Live')->where('payment_method_id', $pmId)->where('type', 'Withdraw')->where('company_id', $companyId)->when($outletId, fn ($q) => $q->where('outlet_id', $outletId))->sum('amount');
         $salary = (float) SalaryPayment::where('del_status', 'Live')->where('payment_method_id', $pmId)->where('company_id', $companyId)->sum('amount');
         $employeeAdvance = (float) EmployeeAdvancePayment::where('del_status', 'Live')->where('company_id', $companyId)->where('payment_method_id', $pmId)->sum('amount');
-        return $openingBalance + $sale - $saleReturn + $installmentSale + $installmentCollection + $customerReceive + $income + $purchaseReturn + $deposit - $purchase - $supplierPayment - $expense - $servicing - $withdraw - $salary - $employeeAdvance;
+        return $openingBalance + $sale - $saleReturn + $installmentSale + $installmentCollection + $customerReceive + $income + $purchaseReturn + $deposit - $purchase - $supplierPayment - $expense - $servicing - $withdraw - $salary - $employeeAdvance
+            + $this->transferPaymentLegs($companyId, $pmId, $outletId)[1]
+            - $this->transferPaymentLegs($companyId, $pmId, $outletId)[0];
     }
 
     /**

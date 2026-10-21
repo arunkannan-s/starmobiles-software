@@ -1,6 +1,6 @@
 {
     "Outlet_Code": "Outlet Code",
-    "Address": "Address", 
+    "Address": "Address",
     "Phone": "Phone",
     "Email": "Email",
     "Enter": "Enter",
@@ -239,7 +239,7 @@
     "Dashboard": "Dashboard",
     "Search Menu": "Search Menu",
     "Booking": "Booking",
-    "Print Last Invoice": "Print Last Invoice", 
+    "Print Last Invoice": "Print Last Invoice",
     "Calculator": "Calculator",
     "Fullscreen": "Fullscreen",
     "Keyboard Shortcuts": "Keyboard Shortcuts",
@@ -1255,7 +1255,7 @@
     "Add Stock Out": "Add Stock Out",
     "Sort Account": "Sort Account",
     "Role Name": "Role Name",
-    "Enter Role Permission": "Enter Role Permission", 
+    "Enter Role Permission": "Enter Role Permission",
     "Role Permissions": "Role Permissions",
     "Photo": "Photo",
     "Select Month": "Select Month",
@@ -1593,7 +1593,7 @@
     "Browse Category": "Browse Category",
     "Search Product": "Search Product",
     "Explore": "Explore",
-    "Shop by curated collection": "Shop by curated collection", 
+    "Shop by curated collection": "Shop by curated collection",
     "View All": "View All",
     "New Trend": "New Trend",
     "Fresh": "Fresh",
@@ -1741,6 +1741,6 @@
     "My Account": "My Account",
     "My Wishlist": "My Wishlist",
     "Support": "Support",
-
-    "End": "End"
+    "End": "End",
+    "Transfer Price": "Transfer Price"
 }

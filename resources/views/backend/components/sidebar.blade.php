@@ -736,7 +736,7 @@
       <span class="menu-header-text">{{ __('Transfer & Damage') }}</span>
     </li>
     @endif
-    @if(Auth::user()->can('transfer-list') || Auth::user()->can('transfer-create'))
+    @if(Auth::user()->can('transfer-list') || Auth::user()->can('transfer-create') || Auth::user()->can('transfer_payment-list') || Auth::user()->can('transfer_payment-create'))
     <li class="menu-item {{ request()->is('transfer*') ? 'active open' : '' }}">
       <a href="javascript:void(0);" class="menu-link menu-toggle">
         <i class="menu-icon icon-base ti tabler-truck-delivery"></i>
@@ -754,6 +754,20 @@
         <li class="menu-item {{ request()->is('transfer') ? 'active' : '' }}">
           <a href="{{ route('transfer.index') }}" class="menu-link">
             <div>{{ __('List Transfer') }}</div>
+          </a>
+        </li>
+        @endcan
+        @can('transfer_payment-create')
+        <li class="menu-item {{ request()->is('transfer-payment/create') || request()->is('transfer-payment/*/edit') ? 'active' : '' }}">
+          <a href="{{ route('transfer-payment.create') }}" class="menu-link">
+            <div>{{ __('Add Transfer Payment') }}</div>
+          </a>
+        </li>
+        @endcan
+        @can('transfer_payment-list')
+        <li class="menu-item {{ request()->is('transfer-payment') ? 'active' : '' }}">
+          <a href="{{ route('transfer-payment.index') }}" class="menu-link">
+            <div>{{ __('List Transfer Payment') }}</div>
           </a>
         </li>
         @endcan
@@ -1250,6 +1264,9 @@
         @can('report-supplier_ledger_report')
         <li class="menu-item {{ request()->is('reports/supplier-ledger-report') ? 'active' : '' }}"><a href="{{ route('report.supplier-ledger-report') }}" class="menu-link"><div>{{ __('Supplier Ledger Report') }}</div></a></li>
         @endcan
+        @can('report-outlet_transfer_ledger_report')
+        <li class="menu-item {{ request()->is('reports/outlet-transfer-ledger-report') ? 'active' : '' }}"><a href="{{ route('report.outlet-transfer-ledger-report') }}" class="menu-link"><div>{{ __('Outlet Transfer Ledger Report') }}</div></a></li>
+        @endcan
         @can('report-supplier_balance_report')
         <li class="menu-item {{ request()->is('reports/supplier-balance-report') ? 'active' : '' }}"><a href="{{ route('report.supplier-balance-report') }}" class="menu-link"><div>{{ __('Supplier Balance Report') }}</div></a></li>
         @endcan
@@ -1301,6 +1318,9 @@
         @endcan
         @can('report-damage_report')
         <li class="menu-item {{ request()->is('reports/damage-report') ? 'active' : '' }}"><a href="{{ route('report.damage-report') }}" class="menu-link"><div>{{ __('Damage Report') }}</div></a></li>
+        @endcan
+        @can('report-transfer_report')
+        <li class="menu-item {{ request()->is('reports/transfer-report') ? 'active' : '' }}"><a href="{{ route('report.transfer-report') }}" class="menu-link"><div>{{ __('Transfer Report') }}</div></a></li>
         @endcan
         @if(module_enabled('installment_sale'))
         @can('report-installment_report')
@@ -1445,34 +1465,8 @@
       </ul>
     </li>
     @endif
-    @if(! config('app.re', false) && ! config('app.is_saas_env', false))
-    @can('security-update')
-    <li class="menu-item {{ request()->is('update*') ? 'active' : '' }}">
-      <a href="{{ route('update.verification') }}" class="menu-link">
-        <i class="menu-icon icon-base ti tabler-cloud-upload"></i>
-        <div>{{ __('Update') }}</div>
-      </a>
-    </li>
-    @endcan
-    @can('security-uninstall')
-    <li class="menu-item">
-      <a href="{{ route('uninstall.license') }}" class="menu-link">
-        <i class="menu-icon icon-base ti tabler-cloud-x"></i>
-        <div>{{ __('Uninstall') }}</div>
-      </a>
-    </li>
-    @endcan
-    @endif
-    @can('security-dbbackup')
-    @if((int) session('company.company_id') === 1)
-    <li class="menu-item {{ request()->is('dbb*') ? 'active' : '' }}">
-      <a href="{{ url('dbb') }}?action=database_backup" class="menu-link">
-        <i class="menu-icon icon-base ti tabler-database-export"></i>
-        <div>{{ __('Database Backup') }}</div>
-      </a>
-    </li>
-    @endif
-    @endcan
+    {{-- Update, Uninstall and Database Backup are intentionally NOT shown in the menu.
+         They are reachable through the search bar (Ctrl+K), like Modules Usages. --}}
     
     <li class="menu-item">
       <a href="javascript:void(0);" class="menu-link logout-btn">

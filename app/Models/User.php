@@ -179,6 +179,18 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the raw list of outlet IDs assigned to this user, as integers.
+     * Note: outlet_id is stored as comma-separated IDs
+     */
+    public function getOutletIdsAttribute(): array
+    {
+        if (!$this->outlet_id) {
+            return [];
+        }
+        return array_map('intval', explode(',', $this->outlet_id));
+    }
+
+    /**
      * Get the medicine count
      */
     public function getEncryptedIdAttribute()

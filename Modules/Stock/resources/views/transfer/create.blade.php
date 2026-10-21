@@ -110,6 +110,18 @@
                                 </div>
                             </div>
 
+                            <div class="col-12 col-md-6 col-lg-4">
+                                <div class="mb-5 validate_wrapper">
+                                    <label class="form-label" for="payment_status">
+                                        <span>{{ __('Payment Status') }} {!! requiredField() !!}</span>
+                                    </label>
+                                    <select id="payment_status" name="payment_status" class="form-select select2">
+                                        <option value="Unpaid" {{ (!isset($transfer) || $transfer->payment_status != 'Paid') ? 'selected' : '' }}>{{ __('Unpaid') }}</option>
+                                        <option value="Paid" {{ (isset($transfer) && $transfer->payment_status == 'Paid') ? 'selected' : '' }}>{{ __('Paid') }}</option>
+                                    </select>
+                                </div>
+                            </div>
+
                             <div class="clear-fix"></div>
                             <div class="col-12 col-md-6 col-lg-4">
                                 <div class="mb-5 validate_wrapper">
@@ -124,7 +136,8 @@
                                                 data-expiry-date-maintain="{{ $item->expiry_date_maintain ?? 'Yes' }}"
                                                 data-brand-name="{{ $item->brand ? $item->brand->name : '' }}"
                                                 data-sale-unit-name="{{ $item->saleUnit ? $item->saleUnit->unit_name : '' }}"
-                                                data-purchase-unit-name="{{ $item->purchaseUnit ? $item->purchaseUnit->unit_name : '' }}">
+                                                data-purchase-unit-name="{{ $item->purchaseUnit ? $item->purchaseUnit->unit_name : '' }}"
+                                                data-purchase-price="{{ $item->purchase_price ?? 0 }}">
                                                 {{ $item->name }} ({{ $item->code }})
                                             </option>
                                         @endforeach
@@ -144,6 +157,8 @@
                                                 <th>{{ __('Item') }}-{{ __('Code') }}-{{ __('Brand') }}</th>
                                                 <th>{{ __('IMEI/Serial/Medicine') }}</th>
                                                 <th>{{ __('Quantity') }}</th>
+                                                <th>{{ __('Transfer Price') }}</th>
+                                                <th>{{ __('Line Total') }}</th>
                                                 <th>{{ __('Action') }}</th>
                                             </tr>
                                         </thead>
@@ -188,6 +203,12 @@
                                                         </div>
                                                     </td>
                                                     <td>
+                                                        <input type="text" class="form-control number-input purchase-price" name="purchase_price[]" min="0" value="{{ $detail->purchase_price ?? $detail->item->purchase_price ?? 0 }}">
+                                                    </td>
+                                                    <td>
+                                                        <span class="line-total">{{ number_format(($detail->purchase_price ?? $detail->item->purchase_price ?? 0) * ($detail->quantity_amount ?? $detail->quantity ?? 1), 2) }}</span>
+                                                    </td>
+                                                    <td>
                                                         <button type="button" class="btn text-danger remove-row">
                                                             <i class="icon-base ti tabler-trash"></i>
                                                         </button>
@@ -207,6 +228,7 @@
                         <div class="row justify-content-end">
                             <div class="col-12 col-md-6 col-lg-4">
                                 <h5 class="mb-4">{{ __('Total Item') }} <span id="totalItemCount">0</span></h5>
+                                <h5 class="mb-4">{{ __('Total Amount') }} <span id="totalAmount">0.00</span></h5>
                             </div>
                             <div class="clear-fix"></div>
                             
@@ -330,6 +352,6 @@
 <input type="hidden" id="variation_child_items_url" value="{{ route('transfer.variation-child-items') }}">
 <input type="hidden" id="transfer_item_stock_at_outlet_url" value="{{ route('transfer.item-stock-at-outlet') }}">
 <input type="hidden" id="transfer_check_imei_in_outlet_url" value="{{ route('transfer.check-imei-in-outlet') }}">
-<script src="{{ asset('public/backend_assets/js/pages_js/add_transfer.js') }}"></script>
+<script src="{{ asset('public/backend_assets/js/pages_js/add_transfer.js') }}?v={{ @filemtime(public_path('backend_assets/js/pages_js/add_transfer.js')) ?: time() }}"></script>
 @endpush
 

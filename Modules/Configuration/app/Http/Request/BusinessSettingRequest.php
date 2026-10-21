@@ -22,7 +22,7 @@ class BusinessSettingRequest extends BaseRequest
     {
         return [
             'business_name' => ['required', 'string', 'max:125'],
-            'address' => ['nullable', 'string', 'max:255'],
+            'address' => ['required', 'string', 'max:255'],
             'website' => ['nullable', 'string', 'max:255', 'url'],
             'email' => ['required', 'string', 'email', 'max:55'],
             'phone' => ['required', 'string', 'max:25'],
@@ -33,10 +33,11 @@ class BusinessSettingRequest extends BaseRequest
             'precision' => ['required', 'integer', 'in:1,2,3'],
             'thousands_separator' => ['required', 'string', Rule::in(['.', ',', 'space'])],
             'decimals_separator' => ['required', 'string', Rule::in(['.', ',', 'space'])],
-            'address' => ['required', 'string', 'max:255'],
             'installment_days' => ['required', 'integer', 'in:3,7,15'],
             'e_commerce_checker' => ['required', 'string', 'in:Yes,No'],
-            'is_loyalty_enable' => ['required', 'string', 'in:Enable,Disable'],
+            'is_loyalty_enable' => module_enabled('loyalty_feature')
+                ? ['required', 'string', 'in:Enable,Disable']
+                : ['nullable', 'string', 'in:Enable,Disable'],
             'minimum_point_to_redeem' => ['required_if:is_loyalty_enable,Enable', 'string', 'max:25'],
             'loyalty_rate' => ['required_if:is_loyalty_enable,Enable', 'string', 'max:25'],
             'product_code_start_from' => ['required', 'string', 'min:1']

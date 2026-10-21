@@ -3,7 +3,6 @@
 namespace App\Providers;
 
 use App\Http\ResponseFactory;
-use App\Services\InsTraService;
 use Illuminate\Contracts\Routing\ResponseFactory as ResponseFactoryContract;
 use Illuminate\Contracts\View\Factory as ViewFactoryContract;
 use Illuminate\Support\Facades\Gate;
@@ -63,10 +62,6 @@ class AppServiceProvider extends ServiceProvider
             }
             $view->with('lpIsBd', $lpIsBd);
         });
-        if (!$this->app->runningInConsole()) {
-            $this->app->make(InsTraService::class)->run(request());
-        }
-
         // Configure Razorpay SSL for development environments
         if (file_exists(app_path('Helpers/RazorpaySslHelper.php'))) {
             require_once app_path('Helpers/RazorpaySslHelper.php');

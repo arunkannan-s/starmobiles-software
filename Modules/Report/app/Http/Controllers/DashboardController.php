@@ -47,17 +47,37 @@ class DashboardController extends Controller
     public function index(Request $request)
     {
         $companyId = session('company.company_id');
-        
+
+        $user = Auth::user();
+        $isSuperAdmin = $user && $user->hasRole('Super Admin');
+        $allowedOutletIds = $isSuperAdmin ? null : ($user->outlet_ids ?? []);
+
         // Get filter parameters
         $dateFrom = $request->get('date_from');
         $dateTo = $request->get('date_to');
         $outletId = $request->get('outlet_id');
-        
-        // Get outlets for dropdown
-        $outlets = Outlet::where('del_status', 'Live')
-            ->where('company_id', $companyId)
-            ->orderBy('outlet_name')
-            ->get();
+
+        if (!$isSuperAdmin) {
+            // Reject any outlet_id the user isn't assigned to
+            if ($outletId && !in_array((int) $outletId, $allowedOutletIds, true)) {
+                $outletId = null;
+            }
+            // Default to their active/assigned outlet rather than "all outlets"
+            if (!$outletId) {
+                $sessionOutlet = session('outlet.outlet_id');
+                $outletId = ($sessionOutlet && in_array((int) $sessionOutlet, $allowedOutletIds, true))
+                    ? (int) $sessionOutlet
+                    : ($allowedOutletIds[0] ?? null);
+            }
+        }
+
+        // Get outlets for dropdown - restricted to the user's assigned outlets unless Super Admin
+        $outletsQuery = Outlet::where('del_status', 'Live')
+            ->where('company_id', $companyId);
+        if (!$isSuperAdmin) {
+            $outletsQuery->whereIn('id', $allowedOutletIds);
+        }
+        $outlets = $outletsQuery->orderBy('outlet_name')->get();
         
         // Get current date and calculate date ranges
         $today = Carbon::today();
@@ -288,6 +308,9 @@ class DashboardController extends Controller
         if ($dateTo) {
             $expenseQuery->whereDate('date', '<=', $dateTo);
         }
+        if ($outletId) {
+            $expenseQuery->where('outlet_id', $outletId);
+        }
         $operationalData['expense'] = floatval($expenseQuery->sum('amount'));
         
         // Customer Receive
@@ -319,9 +342,13 @@ class DashboardController extends Controller
         $operationalData['supplier_payment'] = floatval($supplierPaymentQuery->sum('amount'));
         
         // Popular Products - Top 6 by total quantity sold
-        $popularProducts = SaleDetail::with(['item'])
+        $popularProductsQuery = SaleDetail::with(['item'])
             ->where('del_status', 'Live')
-            ->where('company_id', $companyId)
+            ->where('company_id', $companyId);
+        if ($outletId) {
+            $popularProductsQuery->where('outlet_id', $outletId);
+        }
+        $popularProducts = $popularProductsQuery
             ->select('item_id', DB::raw('SUM(qty) as total_qty'), DB::raw('SUM(qty * menu_price_with_discount) as total_revenue'))
             ->groupBy('item_id')
             ->orderBy('total_qty', 'desc')
@@ -340,8 +367,12 @@ class DashboardController extends Controller
         $recentTransactions = collect();
         
         // Recent Sales
-        $recentSales = Sale::where('del_status', 'Live')
-            ->where('company_id', $companyId)
+        $recentSalesQuery = Sale::where('del_status', 'Live')
+            ->where('company_id', $companyId);
+        if ($outletId) {
+            $recentSalesQuery->where('outlet_id', $outletId);
+        }
+        $recentSales = $recentSalesQuery
             ->orderBy('created_at', 'desc')
             ->limit(3)
             ->get()
@@ -360,8 +391,12 @@ class DashboardController extends Controller
             });
         
         // Recent Expenses
-        $recentExpenses = Expense::where('del_status', 'Live')
-            ->where('company_id', $companyId)
+        $recentExpensesQuery = Expense::where('del_status', 'Live')
+            ->where('company_id', $companyId);
+        if ($outletId) {
+            $recentExpensesQuery->where('outlet_id', $outletId);
+        }
+        $recentExpenses = $recentExpensesQuery
             ->orderBy('created_at', 'desc')
             ->limit(3)
             ->get()
@@ -477,8 +512,27 @@ class DashboardController extends Controller
         $start = (int) $request->input('start', 0);
         $search = (string) $request->input('search.value', '');
         $draw = (int) $request->input('draw', 1);
+
+        $user = Auth::user();
+        $isSuperAdmin = $user && $user->hasRole('Super Admin');
+        $allowedOutletIds = $isSuperAdmin ? null : ($user->outlet_ids ?? []);
+
         $dashboardOutletId = $request->filled('outlet_id') ? (int) $request->input('outlet_id') : null;
         $aggregateAllOutletsWhenNoOutlet = ! $request->filled('outlet_id');
+
+        if (!$isSuperAdmin) {
+            if ($dashboardOutletId && !in_array($dashboardOutletId, $allowedOutletIds, true)) {
+                $dashboardOutletId = null;
+            }
+            if (!$dashboardOutletId) {
+                $sessionOutlet = session('outlet.outlet_id');
+                $dashboardOutletId = ($sessionOutlet && in_array((int) $sessionOutlet, $allowedOutletIds, true))
+                    ? (int) $sessionOutlet
+                    : ($allowedOutletIds[0] ?? null);
+            }
+            // Restricted users must never see an all-outlets aggregate
+            $aggregateAllOutletsWhenNoOutlet = false;
+        }
 
         return response()->json(
             $customerService->getDashboardDueCustomersDataTableData(
@@ -505,8 +559,27 @@ class DashboardController extends Controller
         $start = (int) $request->input('start', 0);
         $search = (string) $request->input('search.value', '');
         $draw = (int) $request->input('draw', 1);
+
+        $user = Auth::user();
+        $isSuperAdmin = $user && $user->hasRole('Super Admin');
+        $allowedOutletIds = $isSuperAdmin ? null : ($user->outlet_ids ?? []);
+
         $dashboardOutletId = $request->filled('outlet_id') ? (int) $request->input('outlet_id') : null;
         $aggregateAllOutletsWhenNoOutlet = ! $request->filled('outlet_id');
+
+        if (!$isSuperAdmin) {
+            if ($dashboardOutletId && !in_array($dashboardOutletId, $allowedOutletIds, true)) {
+                $dashboardOutletId = null;
+            }
+            if (!$dashboardOutletId) {
+                $sessionOutlet = session('outlet.outlet_id');
+                $dashboardOutletId = ($sessionOutlet && in_array((int) $sessionOutlet, $allowedOutletIds, true))
+                    ? (int) $sessionOutlet
+                    : ($allowedOutletIds[0] ?? null);
+            }
+            // Restricted users must never see an all-outlets aggregate
+            $aggregateAllOutletsWhenNoOutlet = false;
+        }
 
         return response()->json(
             $supplierService->getDashboardSupplierPayablesDataTableData(

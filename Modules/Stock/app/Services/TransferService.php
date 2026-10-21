@@ -59,6 +59,8 @@ class TransferService
                 'from_outlet_name' => $transfer->fromOutlet->outlet_name ?? '',
                 'to_outlet_name' => $transfer->toOutlet->outlet_name ?? '',
                 'status' => $statusString,
+                'total_amount' => formatAmount($transfer->total_amount ?? 0),
+                'payment_status' => $transfer->payment_status ?? 'Unpaid',
                 'encrypted_id' => $transfer->encrypted_id,
             ];
         });
@@ -95,8 +97,12 @@ class TransferService
      */
     public function updateTransfer(Transfer $transfer, array $data): bool
     {
-        $this->validateTransferStockAtFromOutlet($data);
-        $this->validateTransferImeiSerialAtFromOutlet($data);
+        // The transfer being edited already counts as stock leaving the From Outlet, so give
+        // its own items back before checking availability (otherwise editing a saved transfer
+        // always fails with "... does not exist in From Outlet's stock").
+        $ownCredit = $this->getOwnStockCredit($transfer, (int) ($data['from_outlet_id'] ?? 0));
+        $this->validateTransferStockAtFromOutlet($data, $ownCredit);
+        $this->validateTransferImeiSerialAtFromOutlet($data, $ownCredit);
         $preparedData = $this->prepareTransferData($data);
         return $this->transferRepository->update($transfer, $preparedData);
     }
@@ -162,9 +168,11 @@ class TransferService
         $details = [];
         $items = $data['items'] ?? [];
         $quantityAmounts = $data['quantity_amount'] ?? [];
+        $purchasePrices = $data['purchase_price'] ?? [];
         $itemTypes = $data['item_types'] ?? [];
         $expiryImeiSerials = $data['expiry_imei_serial'] ?? [];
         $transferDate = $data['date'] ?? now()->toDateString();
+        $totalAmount = 0;
 
         foreach ($items as $index => $itemId) {
             if (!empty($itemId)) {
@@ -182,17 +190,30 @@ class TransferService
                 $expiryImeiSerial = isset($expiryImeiSerials[$index]) && !empty($expiryImeiSerials[$index]) 
                     ? $expiryImeiSerials[$index] 
                     : null;
+
+                // Purchase price: use the value submitted from the form (pre-filled from the
+                // item's current price, but editable). Frozen at time of transfer - fall back
+                // to the item's current purchase price only if none was submitted at all.
+                $purchasePrice = isset($purchasePrices[$index]) && $purchasePrices[$index] !== ''
+                    ? max(0, (float) $purchasePrices[$index])
+                    : (float) (Item::find($itemId)->purchase_price ?? 0);
+
+                $totalAmount += $purchasePrice * $quantityAmount;
                 
                 $detailData = [
                     'status' => $statusInteger,
                     'item_id' => $itemId,
                     'item_type' => $itemType,
                     'quantity_amount' => $quantityAmount,
+                    'purchase_price' => $purchasePrice,
                     'expiry_imei_serial' => $expiryImeiSerial,
                     'from_outlet_id' => $data['from_outlet_id'],
                     'to_outlet_id' => $data['to_outlet_id'],
                     'user_id' => $userId,
-                    'outlet_id' => $outletId,
+                    // Always the SENDING outlet (not the outlet you happen to be logged into).
+                    // The stock view counts "Transfer Out" at this outlet and "Transfer In" at the
+                    // To Outlet, so recording the From Outlet here keeps both sides paired.
+                    'outlet_id' => $data['from_outlet_id'],
                     'company_id' => $companyId,
                     'del_status' => 'Live',
                 ];
@@ -200,6 +221,9 @@ class TransferService
                 $details[] = $detailData;
             }
         }
+
+        $transferData['total_amount'] = $totalAmount;
+        $transferData['payment_status'] = $data['payment_status'] ?? 'Unpaid';
 
         return [
             'transfer' => $transferData,
@@ -218,7 +242,7 @@ class TransferService
     /**
      * Validate that transfer quantity for each item does not exceed stock at the From Outlet.
      */
-    protected function validateTransferStockAtFromOutlet(array $data): void
+    protected function validateTransferStockAtFromOutlet(array $data, array $ownCredit = []): void
     {
         $items = $data['items'] ?? [];
         $quantityAmounts = $data['quantity_amount'] ?? [];
@@ -256,7 +280,7 @@ class TransferService
             }
             $stockIn = (float) ($batch['in'][$itemId] ?? 0);
             $stockOut = (float) ($batch['out'][$itemId] ?? 0);
-            $availableStock = max(0, $stockIn - $stockOut);
+            $availableStock = max(0, $stockIn - $stockOut + (float) ($ownCredit['qty'][$itemId] ?? 0));
 
             if ($totalQty > $availableStock) {
                 $itemName = Item::find($itemId)->name ?? $itemId;
@@ -276,7 +300,7 @@ class TransferService
     /**
      * Validate that each IMEI/Serial/Medicine in transfer details exists in the From Outlet's stock.
      */
-    protected function validateTransferImeiSerialAtFromOutlet(array $data): void
+    protected function validateTransferImeiSerialAtFromOutlet(array $data, array $ownCredit = []): void
     {
         $items = $data['items'] ?? [];
         $itemTypes = $data['item_types'] ?? [];
@@ -307,21 +331,7 @@ class TransferService
                 continue;
             }
 
-            $toCheck = [];
-            if ($itemType === 'Medicine_Product' && strpos($imeiSerialValue, ' - ') !== false) {
-                foreach (array_map('trim', explode(',', $imeiSerialValue)) as $entry) {
-                    $parts = explode(' - ', $entry, 2);
-                    if (count($parts) === 2) {
-                        $toCheck[] = trim($parts[1]);
-                    }
-                }
-            } else {
-                foreach (array_map('trim', explode(',', $imeiSerialValue)) as $v) {
-                    if ($v !== '') {
-                        $toCheck[] = $v;
-                    }
-                }
-            }
+            $toCheck = $this->parseTrackedValues($itemType, $imeiSerialValue);
 
             foreach ($toCheck as $oneValue) {
                 $inQty = (float) DB::table('view_stock_detail')
@@ -336,7 +346,8 @@ class TransferService
                     ->where('type', 2)
                     ->where('expiry_imei_serial', $oneValue)
                     ->sum('stock_quantity');
-                $inStock = ($inQty - $outQty) > 0;
+                $ownBack = !empty($ownCredit['values'][$itemId][$oneValue]) ? 1 : 0;
+                $inStock = ($inQty - $outQty + $ownBack) > 0;
 
                 if (!$inStock) {
                     $itemName = Item::find($itemId)->name ?? $itemId;
@@ -351,5 +362,66 @@ class TransferService
                 }
             }
         }
+    }
+
+    /**
+     * Split a stored IMEI/Serial/Medicine value into the individual values to check.
+     */
+    protected function parseTrackedValues(?string $itemType, string $value): array
+    {
+        $values = [];
+        if ($itemType === 'Medicine_Product' && strpos($value, ' - ') !== false) {
+            foreach (array_map('trim', explode(',', $value)) as $entry) {
+                $parts = explode(' - ', $entry, 2);
+                if (count($parts) === 2) {
+                    $values[] = trim($parts[1]);
+                }
+            }
+        } else {
+            foreach (array_map('trim', explode(',', $value)) as $v) {
+                if ($v !== '') {
+                    $values[] = $v;
+                }
+            }
+        }
+        return $values;
+    }
+
+    /**
+     * Stock this transfer already holds out of the From Outlet (its own saved lines).
+     * Only counts when the From Outlet is unchanged, since the stock view counts a
+     * transfer line as stock out at the outlet it was created from.
+     */
+    protected function getOwnStockCredit(Transfer $transfer, int $newFromOutletId): array
+    {
+        $credit = ['qty' => [], 'values' => []];
+
+        if ($newFromOutletId <= 0) {
+            return $credit;
+        }
+
+        $lines = \Modules\Stock\Models\TransferDetail::where('transfer_id', $transfer->id)
+            ->where('del_status', 'Live')
+            ->get();
+
+        foreach ($lines as $line) {
+            $countedAtFromOutlet = (int) $line->from_outlet_id === (int) $line->outlet_id
+                && (int) $line->from_outlet_id === $newFromOutletId;
+            if (!$countedAtFromOutlet) {
+                continue;
+            }
+
+            $itemId = (int) $line->item_id;
+            $credit['qty'][$itemId] = ($credit['qty'][$itemId] ?? 0) + (int) $line->quantity_amount;
+
+            $stored = trim((string) ($line->expiry_imei_serial ?? ''));
+            if ($stored !== '') {
+                foreach ($this->parseTrackedValues($line->item_type, $stored) as $value) {
+                    $credit['values'][$itemId][$value] = true;
+                }
+            }
+        }
+
+        return $credit;
     }
 }

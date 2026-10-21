@@ -5,6 +5,7 @@ namespace Modules\Report\Http\Controllers;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Modules\Sale\Models\Sale;
 use Modules\Sale\Models\Customer;
 use Modules\Sale\Models\CustomerReceive;
@@ -6234,6 +6235,397 @@ class ReportController extends Controller
 
         // Return view for normal requests
         return view('report::damage-report', compact('outlets', 'employees'));
+    }
+
+    /**
+     * Get Transfer Report Data
+     * Outlet filter matches transfers where the outlet is either the source (from) or destination (to),
+     * so selecting an outlet shows everything that moved in or out of it.
+     */
+    public function transferReport(Request $request)
+    {
+        $companyId = session('company.company_id');
+
+        $user = Auth::user();
+        $isSuperAdmin = $user && $user->hasRole('Super Admin');
+        $allowedOutletIds = $isSuperAdmin ? null : ($user->outlet_ids ?? []);
+
+        // Get filter parameters
+        $dateFrom = $request->get('date_from');
+        $dateTo = $request->get('date_to');
+        $outletId = $request->get('outlet_id');
+        $paymentStatus = $request->get('payment_status');
+
+        if (!$isSuperAdmin) {
+            // Reject any outlet_id the user isn't assigned to
+            if ($outletId && !in_array((int) $outletId, $allowedOutletIds, true)) {
+                $outletId = null;
+            }
+            // Default to their active/assigned outlet rather than "all outlets"
+            if (!$outletId) {
+                $sessionOutlet = session('outlet.outlet_id');
+                $outletId = ($sessionOutlet && in_array((int) $sessionOutlet, $allowedOutletIds, true))
+                    ? (int) $sessionOutlet
+                    : ($allowedOutletIds[0] ?? null);
+            }
+        }
+
+        // Get filter options (for view) - restricted to the user's assigned outlets unless Super Admin
+        $outletsQuery = Outlet::where('del_status', 'Live')
+            ->where('company_id', $companyId);
+        if (!$isSuperAdmin) {
+            $outletsQuery->whereIn('id', $allowedOutletIds);
+        }
+        $outlets = $outletsQuery->select('id', 'outlet_name as name', 'phone', 'address')->get();
+
+        // Build query with relationships
+        $query = \Modules\Stock\Models\Transfer::with(['fromOutlet', 'toOutlet', 'user'])
+            ->withCount(['transferDetails as total_items' => function ($q) {
+                $q->where('del_status', 'Live');
+            }])
+            ->where('del_status', 'Live')
+            ->where('company_id', $companyId);
+
+        // Apply filters
+        if ($dateFrom) {
+            $query->whereDate('date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('date', '<=', $dateTo);
+        }
+        if ($outletId) {
+            $query->where(function ($q) use ($outletId) {
+                $q->where('from_outlet_id', $outletId)
+                    ->orWhere('to_outlet_id', $outletId);
+            });
+        }
+        if ($paymentStatus) {
+            $query->where('payment_status', $paymentStatus);
+        }
+
+        // Get all transfers
+        $transfers = $query->orderBy('date', 'desc')
+            ->orderBy('id', 'desc')
+            ->get();
+
+        // Get selected outlet details for header
+        $selectedOutlet = null;
+        if ($outletId) {
+            $selectedOutlet = Outlet::where('id', $outletId)
+                ->where('company_id', $companyId)
+                ->select('id', 'outlet_name', 'phone', 'address')
+                ->first();
+        }
+
+        $statusMap = [1 => 'Draft', 2 => 'Sent', 3 => 'Received'];
+
+        // If AJAX request, return JSON
+        if ($request->ajax() || $request->wantsJson()) {
+            $formattedTransfers = [];
+            $index = 1;
+            $totalQty = 0;
+            $totalAmount = 0;
+
+            foreach ($transfers as $transfer) {
+                $qty = floatval($transfer->transferDetails()->where('del_status', 'Live')->sum('quantity_amount'));
+                $totalQty += $qty;
+                $amount = floatval($transfer->total_amount ?? 0);
+                $totalAmount += $amount;
+
+                $dateTime = $transfer->created_at ? formatDateTime($transfer->created_at) : '-';
+
+                // Direction relative to the selected outlet, when one is chosen
+                $direction = '-';
+                if ($outletId) {
+                    if ((int) $transfer->from_outlet_id === (int) $outletId) {
+                        $direction = 'Out';
+                    } elseif ((int) $transfer->to_outlet_id === (int) $outletId) {
+                        $direction = 'In';
+                    }
+                }
+
+                $formattedTransfers[] = [
+                    'sn' => $index++,
+                    'reference_no' => $transfer->reference_no ?? '-',
+                    'date_time' => $dateTime,
+                    'from_outlet' => $transfer->fromOutlet->outlet_name ?? '-',
+                    'to_outlet' => $transfer->toOutlet->outlet_name ?? '-',
+                    'direction' => $direction,
+                    'status' => $statusMap[$transfer->status] ?? 'Draft',
+                    'items' => $transfer->total_items ?? 0,
+                    'total_qty' => $qty,
+                    'total_amount' => formatAmount($amount),
+                    'payment_status' => $transfer->payment_status ?? 'Unpaid',
+                    'created_by' => $transfer->user->name ?? '-',
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'transfers' => $formattedTransfers,
+                    'summary' => [
+                        'total_transfers' => count($formattedTransfers),
+                        'total_qty' => $totalQty,
+                        'total_amount' => formatAmount($totalAmount),
+                    ],
+                    'filter_info' => [
+                        'outlet' => $selectedOutlet ? [
+                            'name' => $selectedOutlet->outlet_name,
+                            'phone' => $selectedOutlet->phone,
+                            'address' => $selectedOutlet->address,
+                        ] : null,
+                        'date_from' => $dateFrom ? formatDate($dateFrom) : null,
+                        'date_to' => $dateTo ? formatDate($dateTo) : null,
+                        'generated_at' => formatDateTime(now()),
+                        'generated_by' => auth()->user() ? [
+                            'name' => auth()->user()->name ?? '',
+                            'phone' => auth()->user()->phone ?? '',
+                        ] : null,
+                    ]
+                ]
+            ]);
+        }
+
+        // Return view for normal requests
+        return view('report::transfer-report', compact('outlets'));
+    }
+
+    /**
+     * Get Outlet Transfer Ledger Report Data
+     * Shows, for a selected (branch/receiving) outlet, every Sent/Received transfer it
+     * received as a Debit (it owes for the stock) and every Transfer Payment it made as
+     * a Credit, with a running balance - mirrors the Supplier Ledger Report exactly,
+     * with the outlet standing in for the supplier.
+     */
+    public function outletTransferLedgerReport(Request $request)
+    {
+        $companyId = session('company.company_id');
+
+        $user = Auth::user();
+        $isSuperAdmin = $user && $user->hasRole('Super Admin');
+        $allowedOutletIds = $isSuperAdmin ? null : ($user->outlet_ids ?? []);
+
+        // Get filter options (for view) - restricted to the user's assigned outlets unless Super Admin
+        $outletsQuery = Outlet::where('del_status', 'Live')
+            ->where('company_id', $companyId);
+        if (!$isSuperAdmin) {
+            $outletsQuery->whereIn('id', $allowedOutletIds);
+        }
+        $outlets = $outletsQuery->select('id', 'outlet_name as name', 'phone', 'address')->get();
+
+        // If AJAX request, return JSON
+        if ($request->ajax() || $request->wantsJson()) {
+            $outletId = $request->get('outlet_id'); // the branch/receiving outlet whose ledger we're viewing
+            $dateFrom = $request->get('date_from');
+            $dateTo = $request->get('date_to');
+            $type = $request->get('type', 'All');
+
+            if (!$outletId) {
+                return response()->json([
+                    'success' => false,
+                    'message' => __('Please select an outlet.'),
+                ], 422);
+            }
+
+            $outletId = (int) $outletId;
+
+            if (!$isSuperAdmin && !in_array($outletId, $allowedOutletIds, true)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => __('You do not have access to this outlet.'),
+                ], 403);
+            }
+
+            $selectedOutlet = Outlet::where('id', $outletId)
+                ->where('company_id', $companyId)
+                ->select('id', 'outlet_name', 'phone', 'address')
+                ->first();
+
+            if (!$selectedOutlet) {
+                return response()->json([
+                    'success' => false,
+                    'message' => __('Outlet not found.'),
+                ], 404);
+            }
+
+            // Outlets have no stored opening balance field: it is the net of everything before "Date From" (0 if no date)
+            $openingBalance = 0.0;
+
+            $transactions = collect();
+
+            // Both sides of every transfer, seen from this outlet (double entry):
+            //   DEBIT  (this outlet owes more)    : Transfer Received, Payment Received
+            //   CREDIT (this outlet owes less /   : Transfer Sent, Payment Given
+            //            is owed more)
+            // Closing balance: positive = this outlet owes money; negative = it is owed money.
+            // Draft transfers are not counted. Anything before "Date From" rolls into the opening balance.
+            $fromDay = $dateFrom ? \Carbon\Carbon::parse($dateFrom)->startOfDay() : null;
+            $toDay = $dateTo ? \Carbon\Carbon::parse($dateTo)->endOfDay() : null;
+
+            $addEntry = function (array $entry) use (&$transactions, &$openingBalance, $fromDay, $toDay) {
+                $day = \Carbon\Carbon::parse($entry['date']);
+                if ($fromDay && $day->lt($fromDay)) {
+                    $openingBalance += $entry['debit'] - $entry['credit'];
+                    return;
+                }
+                if ($toDay && $day->gt($toDay)) {
+                    return;
+                }
+                $transactions->push($entry);
+            };
+
+            $transfers = \Modules\Stock\Models\Transfer::with(['fromOutlet', 'toOutlet'])
+                ->where('company_id', $companyId)
+                ->where('del_status', 'Live')
+                ->whereIn('status', [2, 3])
+                ->where(function ($q) use ($outletId) {
+                    $q->where('to_outlet_id', $outletId)->orWhere('from_outlet_id', $outletId);
+                })
+                ->orderBy('date', 'asc')->orderBy('id', 'asc')->get();
+
+            foreach ($transfers as $transfer) {
+                $received = (int) $transfer->to_outlet_id === (int) $outletId;
+                $amount = floatval($transfer->total_amount ?? 0);
+                $addEntry([
+                    'date' => $transfer->date,
+                    'date_time' => $transfer->created_at,
+                    'transaction_type' => $received ? 'Transfer Received' : 'Transfer Sent',
+                    'transaction_no' => $transfer->reference_no ?? '-',
+                    'debit' => $received ? $amount : 0,
+                    'credit' => $received ? 0 : $amount,
+                    'outlet' => $received
+                        ? ($transfer->fromOutlet->outlet_name ?? '-')
+                        : ($transfer->toOutlet->outlet_name ?? '-'),
+                    '_sort_seq' => 0,
+                    '_row_id' => $transfer->id,
+                ]);
+            }
+
+            $payments = \Modules\Stock\Models\TransferPayment::with(['fromOutlet', 'toOutlet'])
+                ->where('company_id', $companyId)
+                ->where('del_status', 'Live')
+                ->where(function ($q) use ($outletId) {
+                    $q->where('to_outlet_id', $outletId)->orWhere('from_outlet_id', $outletId);
+                })
+                ->orderBy('date', 'asc')->orderBy('id', 'asc')->get();
+
+            foreach ($payments as $payment) {
+                // From Outlet = hands over the money, To Outlet = receives it.
+                $given = (int) $payment->from_outlet_id === (int) $outletId; // this outlet handed the money over
+                $amount = floatval($payment->amount ?? 0);
+                $addEntry([
+                    'date' => $payment->date,
+                    'date_time' => $payment->created_at,
+                    'transaction_type' => $given ? 'Payment Given' : 'Payment Received',
+                    'transaction_no' => $payment->reference_no ?? '-',
+                    'debit' => $given ? 0 : $amount,   // received money -> this outlet owes more
+                    'credit' => $given ? $amount : 0,  // gave money    -> this outlet is owed more
+                    'outlet' => $given
+                        ? ($payment->toOutlet->outlet_name ?? '-')
+                        : ($payment->fromOutlet->outlet_name ?? '-'),
+                    '_sort_seq' => 1,
+                    '_row_id' => $payment->id,
+                ]);
+            }
+
+            // Sort chronologically; on same timestamp, debits (transfers) before credits (payments)
+            $transactions = $transactions->sortBy(function ($transaction) {
+                $dt = $transaction['date_time'] ?? null;
+                if ($dt instanceof \Carbon\CarbonInterface) {
+                    $timeStr = $dt->format('Y-m-d H:i:s.u');
+                } elseif (!empty($transaction['date'])) {
+                    $d = $transaction['date'];
+                    $timeStr = $d instanceof \Carbon\CarbonInterface
+                        ? $d->format('Y-m-d H:i:s.u')
+                        : date('Y-m-d H:i:s.u', strtotime((string) $d));
+                } else {
+                    $timeStr = '1970-01-01 00:00:00.000000';
+                }
+                $seqPart = str_pad((string) ($transaction['_sort_seq'] ?? 0), 4, '0', STR_PAD_LEFT);
+                $rowPart = str_pad((string) ($transaction['_row_id'] ?? 0), 10, '0', STR_PAD_LEFT);
+                return $timeStr . '_' . $seqPart . '_' . $rowPart;
+            })->values();
+
+            // Apply type filter
+            if ($type == 'Debit') {
+                $transactions = $transactions->filter(fn($t) => $t['debit'] > 0)->values();
+            } elseif ($type == 'Credit') {
+                $transactions = $transactions->filter(fn($t) => $t['credit'] > 0)->values();
+            }
+
+            // Format data for DataTable
+            $formattedTransactions = [];
+            $index = 1;
+            $runningBalance = $openingBalance;
+            $totalDebit = 0;
+            $totalCredit = 0;
+
+            $openingBalanceDate = $dateFrom ? formatDate($dateFrom) : 'Opening Balance';
+            $formattedTransactions[] = [
+                'sn' => $index++,
+                'date_time' => $openingBalanceDate . ' (Opening Balance)',
+                'transaction_type' => 'Opening Balance',
+                'transaction_no' => '-',
+                'debit' => $openingBalance >= 0 ? formatAmount($openingBalance) : '-',
+                'credit' => $openingBalance < 0 ? formatAmount(abs($openingBalance)) : '-',
+                'outlet' => '-',
+            ];
+
+            foreach ($transactions as $transaction) {
+                $runningBalance += $transaction['debit'] - $transaction['credit'];
+                $totalDebit += $transaction['debit'];
+                $totalCredit += $transaction['credit'];
+
+                $dateTime = '';
+                if ($transaction['date_time']) {
+                    $dateTime = formatDateTime($transaction['date_time']);
+                } elseif ($transaction['date']) {
+                    $dateTime = formatDate($transaction['date']);
+                }
+
+                $formattedTransactions[] = [
+                    'sn' => $index++,
+                    'date_time' => $dateTime,
+                    'transaction_type' => $transaction['transaction_type'],
+                    'transaction_no' => $transaction['transaction_no'],
+                    'debit' => $transaction['debit'] > 0 ? formatAmount($transaction['debit']) : '-',
+                    'credit' => $transaction['credit'] > 0 ? formatAmount($transaction['credit']) : '-',
+                    'outlet' => $transaction['outlet'],
+                ];
+            }
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'transactions' => $formattedTransactions,
+                    'summary' => [
+                        'opening_balance' => formatAmount($openingBalance),
+                        'total_debit' => formatAmount($totalDebit),
+                        'total_credit' => formatAmount($totalCredit),
+                        'closing_balance' => formatAmount($runningBalance),
+                    ],
+                    'filter_info' => [
+                        'outlet' => $selectedOutlet ? [
+                            'name' => $selectedOutlet->outlet_name,
+                            'phone' => $selectedOutlet->phone,
+                            'address' => $selectedOutlet->address,
+                        ] : null,
+                        'date_from' => $dateFrom ? formatDate($dateFrom) : null,
+                        'date_to' => $dateTo ? formatDate($dateTo) : null,
+                        'type' => $type,
+                        'generated_at' => formatDateTime(now()),
+                        'generated_by' => auth()->user() ? [
+                            'name' => auth()->user()->name ?? '',
+                            'phone' => auth()->user()->phone ?? '',
+                        ] : null,
+                    ]
+                ]
+            ]);
+        }
+
+        // Return view for normal requests
+        return view('report::outlet-transfer-ledger-report', compact('outlets'));
     }
 
     /**

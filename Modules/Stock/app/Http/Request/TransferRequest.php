@@ -32,6 +32,7 @@ class TransferRequest extends FormRequest
                 Rule::notIn([$fromOutletId]),
             ],
             'status' => 'required|in:Draft,Sent,Received',
+            'payment_status' => 'required|in:Paid,Unpaid',
             'note_for_sender' => 'nullable|string|max:1000',
             'note_for_receiver' => 'nullable|string|max:1000',
             'items' => 'required|array|min:1',
@@ -40,6 +41,8 @@ class TransferRequest extends FormRequest
             'item_types.*' => 'nullable|string',
             'quantity_amount' => 'required|array|min:1',
             'quantity_amount.*' => 'required|integer|min:1',
+            'purchase_price' => 'nullable|array',
+            'purchase_price.*' => 'nullable|numeric|min:0',
             'expiry_imei_serial' => 'nullable|array',
             'expiry_imei_serial.*' => 'nullable|string|max:55',
         ];
@@ -73,6 +76,10 @@ class TransferRequest extends FormRequest
             'to_outlet_id.not_in' => $toOutlet . ' ' . __('must be different from the') . ' ' . strtolower($fromOutlet) . '.',
             'status.required' => __('The') . ' ' . $status . ' ' . __('is required.'),
             'status.in' => __('The') . ' ' . $status . ' ' . __('must be') . ' ' . __('Draft') . ', ' . __('Sent') . ' ' . __('or') . ' ' . __('Received') . '.',
+            'payment_status.required' => __('The') . ' ' . __('Payment Status') . ' ' . __('is required.'),
+            'payment_status.in' => __('The') . ' ' . __('Payment Status') . ' ' . __('must be') . ' ' . __('Paid') . ' ' . __('or') . ' ' . __('Unpaid') . '.',
+            'purchase_price.*.numeric' => __('Purchase Price') . ' ' . __('must be a valid number.'),
+            'purchase_price.*.min' => __('Purchase Price') . ' ' . __('cannot be negative.'),
             'note_for_sender.max' => __('The') . ' ' . $noteForSender . ' ' . __('may not be greater than') . ' 1000 ' . __('characters.'),
             'note_for_receiver.max' => __('The') . ' ' . $noteForReceiver . ' ' . __('may not be greater than') . ' 1000 ' . __('characters.'),
             'items.required' => __('At least one') . ' ' . strtolower($item) . ' ' . __('is required.'),
@@ -99,6 +106,7 @@ class TransferRequest extends FormRequest
             'from_outlet_id' => __('From_Outlet') ?: 'From Outlet',
             'to_outlet_id' => __('To_Outlet') ?: 'To Outlet',
             'status' => __('Status'),
+            'payment_status' => __('Payment Status'),
             'note_for_sender' => __('Note_for_Sender') ?: 'Note for Sender',
             'note_for_receiver' => __('Note_for_Receiver') ?: 'Note for Receiver',
             'items' => __('Items'),
@@ -128,6 +136,10 @@ class TransferRequest extends FormRequest
 
         if ($this->has('item_types') && !is_array($this->item_types)) {
             $this->merge(['item_types' => []]);
+        }
+
+        if ($this->has('purchase_price') && !is_array($this->purchase_price)) {
+            $this->merge(['purchase_price' => []]);
         }
     }
 }

@@ -1,35 +1,11 @@
 <?php
 
-use App\Services\InsTraService;
 use Illuminate\Foundation\Inspiring;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
-
-Artisan::command('installation-tracker:status', function () {
-    $tracker = app(InsTraService::class);
-    $path = base_path('bootstrap/system/.htaccess');
-    $exists = is_file($path);
-    $this->info('bootstrap/system/.htaccess exists: ' . ($exists ? 'yes' : 'no'));
-    if ($exists) {
-        $content = file_get_contents($path);
-        $this->info('Counter value: ' . (is_numeric(trim($content)) ? trim($content) : '(non-numeric)'));
-    }
-})->purpose('Show installation tracker counter status');
-
-Artisan::command('installation-tracker:reset {value=1 : Counter value to write (e.g. 9 to test next hit triggers CURL)}', function () {
-    $path = base_path('bootstrap/system/.htaccess');
-    $dir = dirname($path);
-    if (!is_dir($dir)) {
-        mkdir($dir, 0755, true);
-    }
-    $value = (int) $this->argument('value');
-    file_put_contents($path, (string) $value, LOCK_EX);
-    $this->info("Counter set to {$value}. Next Sale/POS request will make it " . ($value + 1) . ($value % 10 === 9 ? ' (and trigger CURL).' : '.'));
-})->purpose('Reset installation tracker counter for testing');
 
 // Clear Laravel/software cache (config, view, route, application cache, compiled)
 Artisan::command('cache:clear-software', function () {

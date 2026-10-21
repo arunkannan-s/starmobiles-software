@@ -70,7 +70,12 @@ $(function() {
                     showSuccessNotification(`Successfully synced ${result.success} offline sale(s)`);
                 }
                 if (result && result.errors > 0) {
-                    showErrorNotification(`Failed to sync ${result.errors} sale(s). They will be retried later.`);
+                    console.error('Offline sale sync errors:', result.errorDetails);
+                    const reason =
+                        result.errorDetails && result.errorDetails.length
+                            ? ' Reason: ' + result.errorDetails[0].error
+                            : '';
+                    showErrorNotification(`Failed to sync ${result.errors} sale(s). They will be retried later.${reason}`);
                 }
             })
             .catch((error) => {

@@ -73,10 +73,29 @@ $(async function () {
         $('#totalItemCount').text(count);
     }
 
+    // Function to recalculate a single row's line total
+    function updateRowLineTotal(row) {
+        const qty = parseFloat(row.find('.quantity').val()) || 0;
+        const price = parseFloat(row.find('.purchase-price').val()) || 0;
+        const lineTotal = qty * price;
+        row.find('.line-total').text(lineTotal.toFixed(2));
+        return lineTotal;
+    }
+
+    // Function to update the overall Total Amount summary (sum of all line totals)
+    function updateTotalAmount() {
+        let total = 0;
+        $('#transferItems tr').each(function() {
+            total += updateRowLineTotal($(this));
+        });
+        $('#totalAmount').text(total.toFixed(2));
+    }
+
     // Function to clear all items from cart
     function clearCartItems() {
         $('#transferItems').empty();
         updateTotalItemCount();
+        updateTotalAmount();
     }
 
     // Function to show confirmation when outlets change
@@ -199,6 +218,17 @@ $(async function () {
         if (itemData && itemData.brandName) {
             displayName += ' - ' + itemData.brandName;
         }
+
+        // Purchase price - auto-filled from the item's current price, editable per line
+        let purchasePrice = 0;
+        if (itemData) {
+            if (typeof itemData.purchasePrice !== 'undefined' && itemData.purchasePrice !== null) {
+                purchasePrice = parseFloat(itemData.purchasePrice) || 0;
+            } else if (itemData.id) {
+                const selectedOption = $('#quickItemSelect option[value="' + itemData.id + '"]');
+                purchasePrice = parseFloat(selectedOption.data('purchase-price')) || 0;
+            }
+        }
         
         // Create row HTML
         let rowHtml = `
@@ -223,6 +253,12 @@ $(async function () {
                 </div>
             </td>
             <td style="vertical-align: top;">
+                <input type="text" class="form-control number-input purchase-price" name="purchase_price[]" min="0" value="${purchasePrice}">
+            </td>
+            <td style="vertical-align: top;">
+                <span class="line-total">${purchasePrice.toFixed(2)}</span>
+            </td>
+            <td style="vertical-align: top;">
                 <button type="button" class="btn text-danger remove-row">
                     <i class="icon-base ti tabler-trash"></i>
                 </button>
@@ -239,6 +275,7 @@ $(async function () {
         
         // Initialize row events
         initializeRowEvents(newRow);
+        updateTotalAmount();
     }
   
     // Function to initialize events for a row
@@ -401,6 +438,13 @@ $(async function () {
             row.remove();
             updateRowNumbers();
             updateTotalItemCount();
+            updateTotalAmount();
+        });
+
+        // Recalculate line total / overall total when quantity or purchase price changes
+        row.find('.quantity, .purchase-price').on('input change', function() {
+            updateRowLineTotal(row);
+            updateTotalAmount();
         });
     }
 
@@ -423,6 +467,7 @@ $(async function () {
     // Recalculate summary after all rows are initialized
     updateRowNumbers();
     updateTotalItemCount();
+    updateTotalAmount();
     
     // Function to update row numbers
     function updateRowNumbers() {
@@ -456,6 +501,7 @@ $(async function () {
             brandName: selectedOption.data('brand-name'),
             saleUnitName: selectedOption.data('sale-unit-name'),
             purchaseUnitName: selectedOption.data('purchase-unit-name'),
+            purchasePrice: parseFloat(selectedOption.data('purchase-price')) || 0,
             type: itemType
         };
         
@@ -504,6 +550,7 @@ $(async function () {
                                 saleUnitName: itemData.saleUnitName,
                                 type: '0',
                                 parentId: itemId,
+                                purchasePrice: parseFloat(childItem.purchase_price) || 0,
                                 brandName: childItem.brand ? childItem.brand.name : ''
                             };
                             
@@ -938,6 +985,7 @@ $(async function () {
         transferMedicineData = [];
         currentRow = null;
         updateTotalItemCount();
+        updateTotalAmount();
     });
   
     // Form submission validation
@@ -998,6 +1046,14 @@ $(async function () {
                         errors.push(`Row ${index + 1}: Please enter a valid quantity (must be a whole number greater than 0)`);
                         isValid = false;
                     }
+                }
+
+                // Purchase price must be a non-negative number for every row
+                const purchasePriceVal = $(this).find('.purchase-price').val();
+                const purchasePrice = parseFloat(purchasePriceVal);
+                if (purchasePriceVal === '' || isNaN(purchasePrice) || purchasePrice < 0) {
+                    errors.push(`Row ${index + 1}: Please enter a valid purchase price (0 or greater)`);
+                    isValid = false;
                 }
             });
         }

@@ -48,6 +48,8 @@
                                 <th>{{ __('From Outlet') }}</th>
                                 <th>{{ __('To Outlet') }}</th>
                                 <th>{{ __('Status') }}</th>
+                                <th>{{ __('Total Amount') }}</th>
+                                <th>{{ __('Payment Status') }}</th>
                                 <th>{{ __('Action') }}</th>
                             </tr>
                         </thead>

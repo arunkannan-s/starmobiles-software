@@ -60,6 +60,14 @@ $(async function () {
             return '<span class="badge bg-' + badgeClass + '">' + data + '</span>';
           }
         },
+        { data: 'total_amount' },
+        { 
+          data: 'payment_status',
+          render: function(data) {
+            let badgeClass = data === 'Paid' ? 'success' : 'danger';
+            return '<span class="badge bg-' + badgeClass + '">' + data + '</span>';
+          }
+        },
         { 
           data: null,
           orderable: false,
@@ -101,19 +109,19 @@ $(async function () {
               extend: 'print',
               text: '<i class="ti tabler-printer me-1" ></i>'+language_key.Print,
               className: 'dropdown-item',
-              exportOptions: { columns: [0, 1, 2, 3, 4, 5] }
+              exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6, 7] }
             },
             {
               extend: 'excel',
               text: '<i class="ti tabler-file-spreadsheet me-1"></i>'+language_key.Excel,
               className: 'dropdown-item',
-              exportOptions: { columns: [0, 1, 2, 3, 4, 5] }
+              exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6, 7] }
             },
             {
               extend: 'pdf',
               text: '<i class="ti tabler-file-description me-1"></i>'+language_key.Pdf,
               className: 'dropdown-item',
-              exportOptions: { columns: [0, 1, 2, 3, 4, 5] }
+              exportOptions: { columns: [0, 1, 2, 3, 4, 5, 6, 7] }
             }
           ]
         }, 

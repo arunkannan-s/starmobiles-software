@@ -182,6 +182,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->name('report.damage-report')
             ->middleware('permission:report-damage_report');
 
+        // Transfer Report
+        Route::get('reports/transfer-report', 'transferReport')
+            ->name('report.transfer-report')
+            ->middleware('permission:report-transfer_report');
+
+        // Outlet Transfer Ledger Report
+        Route::get('reports/outlet-transfer-ledger-report', 'outletTransferLedgerReport')
+            ->name('report.outlet-transfer-ledger-report')
+            ->middleware('permission:report-outlet_transfer_ledger_report');
+
         // Installment Report
         Route::get('reports/installment-report', 'installmentReport')
             ->name('report.installment-report')

@@ -140,7 +140,7 @@ class RolePermissionSeeder extends Seeder
                 'supplier_ledger_report', 'supplier_balance_report', 'customer_ledger_report', 'customer_balance_report',
                 'servicing_report', 'product_sale_report', 'tax_report', 'detailed_sale_report', 'profit_loss_report',
                 'purchase_report', 'expense_report', 'income_report', 'salary_report', 'purchase_return_report',
-                'sale_return_report', 'damage_report', 'installment_report', 'installment_due_report', 'item_tracking_report',
+                'sale_return_report', 'damage_report', 'transfer_report', 'outlet_transfer_ledger_report', 'installment_report', 'installment_due_report', 'item_tracking_report',
                 'price_history_report', 'cash_flow_report', 'available_loyalty_point_report', 'usage_loyalty_point_report',
             ],
             'role' => [
@@ -174,6 +174,9 @@ class RolePermissionSeeder extends Seeder
                 'list', 'create', 'edit', 'show', 'destroy'
             ],
             'transfer' => [
+                'list', 'create', 'edit', 'show', 'destroy'
+            ],
+            'transfer_payment' => [
                 'list', 'create', 'edit', 'show', 'destroy'
             ],
             'unit' => [

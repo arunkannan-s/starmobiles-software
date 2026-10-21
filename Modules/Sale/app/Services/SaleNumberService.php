@@ -22,10 +22,31 @@ class SaleNumberService
         $liveSalesCount = Sale::where('company_id', $companyId)->where('del_status', 'Live')->count();
 
         if ($liveSalesCount === 0) {
-            return $this->generateFirstSaleNoFromInvoiceConfig($companyId, $config);
+            return $this->ensureUniqueSequential($this->generateFirstSaleNoFromInvoiceConfig($companyId, $config), $config);
         }
 
-        return $this->generateNextSaleNoFromExistingSales($companyId, $config);
+        return $this->ensureUniqueSequential($this->generateNextSaleNoFromExistingSales($companyId, $config), $config);
+    }
+
+    /**
+     * The sale_no column is unique across ALL sales, including deleted ones, but the next
+     * number is worked out from the last LIVE sale. After a sale is deleted the next number
+     * would match the deleted one and every new sale would fail with
+     * "A record with this information already exists". Skip numbers that are already taken.
+     *
+     * @param  array<string, mixed>  $config
+     */
+    protected function ensureUniqueSequential(string $saleNo, array $config): string
+    {
+        if (($config['inv_numbering_type'] ?? 'Sequential') !== 'Sequential') {
+            return $saleNo; // Random numbering already checks uniqueness itself
+        }
+
+        for ($i = 0; $i < 5000 && Sale::withoutGlobalScopes()->where('sale_no', $saleNo)->exists(); $i++) {
+            $saleNo = $this->incrementSequentialSaleNo($saleNo, $config);
+        }
+
+        return $saleNo;
     }
 
     /**

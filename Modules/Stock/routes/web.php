@@ -10,6 +10,7 @@ use Modules\Stock\Http\Controllers\VariationAttributeController;
 use Modules\Stock\Http\Controllers\ItemController;
 use Modules\Stock\Http\Controllers\DamageController;
 use Modules\Stock\Http\Controllers\TransferController;
+use Modules\Stock\Http\Controllers\TransferPaymentController;
 use Modules\Stock\Http\Controllers\FixedAssetItemController;
 use Modules\Stock\Http\Controllers\FixedAssetStockInController;
 use Modules\Stock\Http\Controllers\FixedAssetStockOutController;
@@ -161,6 +162,17 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('transfer/{transfer}/edit', 'edit')->name('transfer.edit')->middleware(['permission:transfer-edit', 'outlet_set', 'register_open']);
         Route::put('transfer/{transfer}', 'update')->name('transfer.update')->middleware(['permission:transfer-edit', 'outlet_set', 'register_open']);
         Route::delete('transfer/{transfer}', 'destroy')->name('transfer.destroy')->middleware(['permission:transfer-destroy', 'outlet_set', 'register_open']);
+    });
+
+    // Transfer Payment CRUD Routes (outlet-to-outlet ledger payments)
+    Route::controller(TransferPaymentController::class)->group(function () {
+        Route::get('transfer-payment', 'index')->name('transfer-payment.index')->middleware(['permission:transfer_payment-list', 'outlet_set', 'register_open']);
+        Route::get('transfer-payment/create', 'create')->name('transfer-payment.create')->middleware(['permission:transfer_payment-create', 'outlet_set', 'register_open']);
+        Route::post('transfer-payment', 'store')->name('transfer-payment.store')->middleware(['permission:transfer_payment-create', 'outlet_set', 'register_open']);
+        Route::get('transfer-payment/{transfer_payment}/edit', 'edit')->name('transfer-payment.edit')->middleware(['permission:transfer_payment-edit', 'outlet_set', 'register_open']);
+        Route::put('transfer-payment/{transfer_payment}', 'update')->name('transfer-payment.update')->middleware(['permission:transfer_payment-edit', 'outlet_set', 'register_open']);
+        Route::delete('transfer-payment/{transfer_payment}', 'destroy')->name('transfer-payment.destroy')->middleware(['permission:transfer_payment-destroy', 'outlet_set', 'register_open']);
+        Route::get('outlet/get-balance-by-id/{id}', 'getBalanceByOutletId')->name('outlet.get-balance-by-id');
     });
 
     // Fixed Asset Item CRUD Routes

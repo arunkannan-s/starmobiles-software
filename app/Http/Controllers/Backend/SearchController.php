@@ -798,6 +798,40 @@ class SearchController extends Controller
             ]
         ];
 
+        // System pages (Update / Uninstall / Database Backup).
+        // Not shown in the sidebar menu; reachable from search only, and only for
+        // users who hold the matching permission (same rules the sidebar used).
+        $searchUser = \Auth::user();
+        $systemPages = [];
+        if ($searchUser) {
+            if (! config('app.re', false) && ! config('app.is_saas_env', false)) {
+                if ($searchUser->can('security-update')) {
+                    $systemPages[] = [
+                        'name' => __('Update'),
+                        'icon' => 'tabler-cloud-upload',
+                        'url' => $this->safeRoute('update.verification')
+                    ];
+                }
+                if ($searchUser->can('security-uninstall')) {
+                    $systemPages[] = [
+                        'name' => __('Uninstall'),
+                        'icon' => 'tabler-cloud-x',
+                        'url' => $this->safeRoute('uninstall.license')
+                    ];
+                }
+            }
+            if ($searchUser->can('security-dbbackup') && (int) session('company.company_id') === 1) {
+                $systemPages[] = [
+                    'name' => __('Database Backup'),
+                    'icon' => 'tabler-database-export',
+                    'url' => url('dbb') . '?action=database_backup'
+                ];
+            }
+        }
+        if (! empty($systemPages)) {
+            $navigation['System'] = $systemPages;
+        }
+
         // Human Resource Management
         $navigation['Human Resource'] = [
             [

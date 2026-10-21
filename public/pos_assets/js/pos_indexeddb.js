@@ -1862,7 +1862,7 @@ class POSIndexedDB {
                         errorCount++;
                         errors.push({
                             saleId: sale.id,
-                            error: 'Invalid server response while syncing sale'
+                            error: 'Invalid server response while syncing sale (HTTP ' + response.status + ')'
                         });
                         continue;
                     }
@@ -1875,9 +1875,19 @@ class POSIndexedDB {
                         successCount++;
                     } else {
                         errorCount++;
+                        // Say WHY the server rejected it: message + first validation detail + HTTP code
+                        let reason = result.message || 'Unknown error';
+                        if (result.errors && typeof result.errors === 'object') {
+                            const detail = [].concat(...Object.values(result.errors)).filter(Boolean).slice(0, 2).join(' ');
+                            if (detail) {
+                                reason += ': ' + detail;
+                            }
+                        }
+                        reason += ' (HTTP ' + response.status + ')';
                         errors.push({
                             saleId: sale.id,
-                            error: result.message || 'Unknown error'
+                            randomCode: saleDataToSync.random_code,
+                            error: reason
                         });
                     }
                 } catch (error) {

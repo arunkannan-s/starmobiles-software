@@ -68,12 +68,23 @@ class TransferController extends Controller
     }
 
     /**
+     * Validated data plus the raw submitted line prices, so the price typed on each
+     * line is always the one saved (never silently replaced by the item's purchase price).
+     */
+    private function transferPayload(TransferRequest $request): array
+    {
+        $data = $request->validated();
+        $data['purchase_price'] = (array) $request->input('purchase_price', []);
+        return $data;
+    }
+
+    /**
      * Store a newly created resource in storage.
      */
     public function store(TransferRequest $request)
     {
         try {
-            $this->transferService->createTransfer($request->validated());
+            $this->transferService->createTransfer($this->transferPayload($request));
 
             return redirect()->route('transfer.index')
                 ->with('success', __('Transfer Created Successfully'));
@@ -163,7 +174,7 @@ class TransferController extends Controller
                     ->with('error', __('Transfer not found'));
             }
 
-            $this->transferService->updateTransfer($transfer, $request->validated());
+            $this->transferService->updateTransfer($transfer, $this->transferPayload($request));
 
             return redirect()->route('transfer.index')
                 ->with('success', __('Transfer Updated Successfully'));
